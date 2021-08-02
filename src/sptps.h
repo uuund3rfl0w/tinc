@@ -26,7 +26,7 @@
 #include "ecdh.h"
 #include "ecdsa.h"
 
-#define SPTPS_VERSION 0
+#define SPTPS_VERSION 1
 
 // Record types
 #define SPTPS_HANDSHAKE 128   // Key exchange and authentication
@@ -34,7 +34,10 @@
 #define SPTPS_CLOSE 130       // Application closed the connection
 
 // Overhead for datagrams
-#define SPTPS_DATAGRAM_OVERHEAD 21
+static const size_t SPTPS_OVERHEAD = 19;
+static const size_t SPTPS_HEADER = 3;
+static const size_t SPTPS_DATAGRAM_OVERHEAD = 21;
+static const size_t SPTPS_DATAGRAM_HEADER = 5;
 
 typedef bool (*send_data_t)(void *handle, uint8_t type, const void *data, size_t len);
 typedef bool (*receive_record_t)(void *handle, uint8_t type, const void *data, uint16_t len);
@@ -47,9 +50,40 @@ typedef enum sptps_state_t {
 	SPTPS_ACK = 4,           // Waiting for an ACKnowledgement record
 } sptps_state_t;
 
+// Public key suites
+enum {
+	SPTPS_ED25519 = 0,
+};
+
+// Cipher suites
+enum {
+	SPTPS_CHACHA_POLY1305 = 0,
+	SPTPS_AES256_GCM = 1,
+	SPTPS_ALL_CIPHER_SUITES = 0x3,
+};
+
+typedef struct sptps_params {
+	void *handle;
+	bool initiator;
+	bool datagram;
+	uint8_t preferred_suite;
+	uint16_t cipher_suites;
+	ecdsa_t *mykey;
+	ecdsa_t *hiskey;
+	const void *label;
+	size_t labellen;
+	send_data_t send_data;
+	receive_record_t receive_record;
+} sptps_params_t;
+
 typedef struct sptps {
 	bool initiator;
 	bool datagram;
+	uint8_t preferred_suite;
+	uint16_t cipher_suites;
+
+	uint8_t pk_suite;
+	uint8_t cipher_suite;
 	sptps_state_t state;
 
 	uint8_t *inbuf;
@@ -57,7 +91,7 @@ typedef struct sptps {
 	uint16_t reclen;
 
 	bool instate;
-	chacha_poly1305_ctx_t *incipher;
+	void *incipher;
 	uint32_t inseqno;
 	uint32_t received;
 	unsigned int replaywin;
@@ -65,7 +99,7 @@ typedef struct sptps {
 	uint8_t *late;
 
 	bool outstate;
-	chacha_poly1305_ctx_t *outcipher;
+	void *outcipher;
 	uint32_t outseqno;
 
 	ecdsa_t *mykey;
@@ -87,7 +121,7 @@ extern unsigned int sptps_replaywin;
 extern void sptps_log_quiet(sptps_t *s, int s_errno, const char *format, va_list ap);
 extern void sptps_log_stderr(sptps_t *s, int s_errno, const char *format, va_list ap);
 extern void (*sptps_log)(sptps_t *s, int s_errno, const char *format, va_list ap);
-extern bool sptps_start(sptps_t *s, void *handle, bool initiator, bool datagram, ecdsa_t *mykey, ecdsa_t *hiskey, const void *label, size_t labellen, send_data_t send_data, receive_record_t receive_record);
+extern bool sptps_start(sptps_t *s, const struct sptps_params *params);
 extern bool sptps_stop(sptps_t *s);
 extern bool sptps_send_record(sptps_t *s, uint8_t type, const void *data, uint16_t len);
 extern size_t sptps_receive_data(sptps_t *s, const void *data, size_t len);
