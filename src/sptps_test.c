@@ -127,6 +127,8 @@ static struct option const long_options[] = {
 	{"replay-window", required_argument, NULL, 'W'},
 	{"special", no_argument, NULL, 's'},
 	{"verbose", required_argument, NULL, 'v'},
+	{"cipher-suites", required_argument, NULL, 'M'},
+	{"preferred-cipher", required_argument, NULL, 'P'},
 	{"help", no_argument, NULL, 1},
 	{NULL, 0, NULL, 0}
 };
@@ -136,19 +138,21 @@ static void usage(void) {
 	        "Usage: %s [options] my_ed25519_key_file his_ed25519_key_file [host] port\n"
 	        "\n"
 	        "Valid options are:\n"
-	        "  -d, --datagram          Enable datagram mode.\n"
-	        "  -q, --quit              Quit when EOF occurs on stdin.\n"
-	        "  -r, --readonly          Only send data from the socket to stdout.\n"
+	        "  -d, --datagram            Enable datagram mode.\n"
+	        "  -q, --quit                Quit when EOF occurs on stdin.\n"
+	        "  -r, --readonly            Only send data from the socket to stdout.\n"
 #ifdef HAVE_LINUX
-	        "  -t, --tun               Use a tun device instead of stdio.\n"
+	        "  -t, --tun                 Use a tun device instead of stdio.\n"
 #endif
-	        "  -w, --writeonly         Only send data from stdin to the socket.\n"
-	        "  -L, --packet-loss RATE  Fake packet loss of RATE percent.\n"
-	        "  -R, --replay-window N   Set replay window to N bytes.\n"
-	        "  -s, --special           Enable special handling of lines starting with #, ^ and $.\n"
-	        "  -v, --verbose           Display debug messages.\n"
-	        "  -4                      Use IPv4.\n"
-	        "  -6                      Use IPv6.\n"
+	        "  -w, --writeonly           Only send data from stdin to the socket.\n"
+	        "  -L, --packet-loss RATE    Fake packet loss of RATE percent.\n"
+	        "  -R, --replay-window N     Set replay window to N bytes.\n"
+	        "  -M, --cipher-suites MASK  Set the mask of allowed cipher suites.\n"
+	        "  -P, --preferred-suite N   Set the preferred cipher suite.\n"
+	        "  -s, --special             Enable special handling of lines starting with #, ^ and $.\n"
+	        "  -v, --verbose             Display debug messages.\n"
+	        "  -4                        Use IPv4.\n"
+	        "  -6                        Use IPv6.\n"
 	        "\n"
 	        "Report bugs to tinc@tinc-vpn.org.\n";
 
@@ -326,6 +330,8 @@ static int run_test(int argc, char *argv[]) {
 	int r;
 	int option_index = 0;
 	bool quit = false;
+	unsigned long cipher_suites = SPTPS_ALL_CIPHER_SUITES;
+	unsigned long preferred_suite = 0;
 
 	while((r = getopt_long(argc, argv, "dqrstwL:W:v46", long_options, &option_index)) != EOF) {
 		switch(r) {
@@ -364,6 +370,14 @@ static int run_test(int argc, char *argv[]) {
 
 		case 'W': /* replay window size */
 			sptps_replaywin = atoi(optarg);
+			break;
+
+		case 'M': /* cipher suites */
+			cipher_suites = strtoul(optarg, NULL, 0);
+			break;
+
+		case 'P': /* preferred cipher */
+			preferred_suite = strtoul(optarg, NULL, 0);
 			break;
 
 		case 'v': /* be verbose */
@@ -571,6 +585,8 @@ static int run_test(int argc, char *argv[]) {
 		.label = "sptps_test",
 		.send_data = send_data,
 		.receive_record = receive_record,
+		.cipher_suites = cipher_suites,
+		.preferred_suite = preferred_suite,
 	};
 
 	if(!sptps_start(&s, &params)) {
