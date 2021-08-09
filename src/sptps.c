@@ -1,6 +1,6 @@
 /*
     sptps.c -- Simple Peer-to-Peer Security
-    Copyright (C) 2011-2015 Guus Sliepen <guus@tinc-vpn.org>,
+    Copyright (C) 2011-2021 Guus Sliepen <guus@tinc-vpn.org>,
                   2010      Brandon L. Black <blblack@gmail.com>
 
     This program is free software; you can redistribute it and/or modify
@@ -20,7 +20,7 @@
 
 #include "system.h"
 
-#include "chacha-poly1305/chacha-poly1305.h"
+#include "chacha-poly1305/chachapoly.h"
 #include "ecdh.h"
 #include "ecdsa.h"
 #include "logger.h"
@@ -31,6 +31,8 @@
 #ifdef HAVE_OPENSSL
 #include <openssl/evp.h>
 #endif
+
+#define CIPHER_KEYLEN 64
 
 unsigned int sptps_replaywin = 16;
 
@@ -99,8 +101,8 @@ static bool cipher_init(uint8_t suite, void **ctx, const uint8_t *key, bool key_
 #ifndef HAVE_OPENSSL
 
 	case SPTPS_CHACHA_POLY1305:
-		*ctx = chacha_poly1305_init();
-		return ctx && chacha_poly1305_set_key(*ctx, key + (key_half ? CHACHA_POLY1305_KEYLEN : 0));
+		*ctx = malloc(sizeof(struct chachapoly_ctx));
+		return *ctx && chachapoly_init(*ctx, key + (key_half ? CIPHER_KEYLEN : 0), 256) == CHACHAPOLY_OK;
 
 #else
 
@@ -113,7 +115,7 @@ static bool cipher_init(uint8_t suite, void **ctx, const uint8_t *key, bool key_
 
 		return EVP_EncryptInit_ex(*ctx, EVP_chacha20_poly1305(), NULL, NULL, NULL)
 		       && EVP_CIPHER_CTX_ctrl(*ctx, EVP_CTRL_AEAD_SET_IVLEN, 12, NULL)
-		       && EVP_EncryptInit_ex(*ctx, NULL, NULL, key + (key_half ? CHACHA_POLY1305_KEYLEN : 0), key);
+		       && EVP_EncryptInit_ex(*ctx, NULL, NULL, key + (key_half ? CIPHER_KEYLEN : 0), key);
 
 	case SPTPS_AES256_GCM:
 		*ctx = EVP_CIPHER_CTX_new();
@@ -137,7 +139,7 @@ static void cipher_exit(uint8_t suite, void *ctx) {
 #ifndef HAVE_OPENSSL
 
 	case SPTPS_CHACHA_POLY1305:
-		chacha_poly1305_exit(ctx);
+		free(ctx);
 		break;
 
 #else
@@ -159,9 +161,17 @@ static bool cipher_encrypt(uint8_t suite, void *ctx, uint32_t seqno, const uint8
 	switch(suite) {
 #ifndef HAVE_OPENSSL
 
-	case SPTPS_CHACHA_POLY1305:
-		chacha_poly1305_encrypt(ctx, seqno, in, inlen, out, outlen);
+	case SPTPS_CHACHA_POLY1305: {
+		if(chachapoly_crypt(ctx, nonce, NULL, 0, (void *)in, inlen, out, out + inlen, 16, 1) != CHACHAPOLY_OK) {
+			return false;
+		}
+
+		if(outlen) {
+			*outlen = inlen + 16;
+		}
+
 		return true;
+	}
 
 #else
 
@@ -204,24 +214,32 @@ static bool cipher_encrypt(uint8_t suite, void *ctx, uint32_t seqno, const uint8
 }
 
 static bool cipher_decrypt(uint8_t suite, void *ctx, uint32_t seqno, const uint8_t *in, size_t inlen, uint8_t *out, size_t *outlen) {
+	if(inlen < 16) {
+		return false;
+	}
+
+	inlen -= 16;
+
 	uint8_t nonce[12] = {seqno, seqno >> 8, seqno >> 16, seqno >> 24};
 
 	switch(suite) {
 #ifndef HAVE_OPENSSL
 
 	case SPTPS_CHACHA_POLY1305:
-		return chacha_poly1305_decrypt(ctx, seqno, in, inlen, out, outlen);
+		if(chachapoly_crypt(ctx, nonce, NULL, 0, (void *)in, inlen, out, (void *)(in + inlen), 16, 0) != CHACHAPOLY_OK) {
+			return false;
+		}
+
+		if(outlen) {
+			*outlen = inlen;
+		}
+
+		return true;
 
 #else
 
 	case SPTPS_CHACHA_POLY1305:
 	case SPTPS_AES256_GCM: {
-		if(inlen < 16) {
-			return false;
-		}
-
-		inlen -= 16;
-
 		if(!EVP_DecryptInit_ex(ctx, NULL, NULL, NULL, nonce)) {
 			return false;
 		}
@@ -379,7 +397,7 @@ static bool send_sig(sptps_t *s) {
 // Generate key material from the shared secret created from the ECDHE key exchange.
 static bool generate_key_material(sptps_t *s, const uint8_t *shared, size_t len) {
 	// Allocate memory for key material
-	size_t keylen = 2 * CHACHA_POLY1305_KEYLEN;
+	size_t keylen = 2 * CIPHER_KEYLEN;
 
 	s->key = realloc(s->key, keylen);
 

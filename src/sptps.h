@@ -3,7 +3,7 @@
 
 /*
     sptps.h -- Simple Peer-to-Peer Security
-    Copyright (C) 2011-2014 Guus Sliepen <guus@tinc-vpn.org>
+    Copyright (C) 2011-2021 Guus Sliepen <guus@tinc-vpn.org>
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -22,7 +22,7 @@
 
 #include "system.h"
 
-#include "chacha-poly1305/chacha-poly1305.h"
+#include "chacha-poly1305/chachapoly.h"
 #include "ecdh.h"
 #include "ecdsa.h"
 
