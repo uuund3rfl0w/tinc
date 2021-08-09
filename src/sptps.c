@@ -96,12 +96,26 @@ static void warning(sptps_t *s, const char *format, ...) {
 
 static bool cipher_init(uint8_t suite, void **ctx, const uint8_t *key, bool key_half) {
 	switch(suite) {
+#ifndef HAVE_OPENSSL
+
 	case SPTPS_CHACHA_POLY1305:
 		*ctx = chacha_poly1305_init();
 		return ctx && chacha_poly1305_set_key(*ctx, key + (key_half ? CHACHA_POLY1305_KEYLEN : 0));
 
+#else
+
+	case SPTPS_CHACHA_POLY1305:
+		*ctx = EVP_CIPHER_CTX_new();
+
+		if(!ctx) {
+			return false;
+		}
+
+		return EVP_EncryptInit_ex(*ctx, EVP_chacha20_poly1305(), NULL, NULL, NULL)
+		       && EVP_CIPHER_CTX_ctrl(*ctx, EVP_CTRL_AEAD_SET_IVLEN, 12, NULL)
+		       && EVP_EncryptInit_ex(*ctx, NULL, NULL, key + (key_half ? CHACHA_POLY1305_KEYLEN : 0), key);
+
 	case SPTPS_AES256_GCM:
-#ifdef HAVE_OPENSSL
 		*ctx = EVP_CIPHER_CTX_new();
 
 		if(!ctx) {
@@ -109,8 +123,8 @@ static bool cipher_init(uint8_t suite, void **ctx, const uint8_t *key, bool key_
 		}
 
 		return EVP_EncryptInit_ex(*ctx, EVP_aes_256_gcm(), NULL, NULL, NULL)
-		       && EVP_CIPHER_CTX_ctrl(*ctx, EVP_CTRL_AEAD_SET_IVLEN, 4, NULL)
-		       && EVP_EncryptInit_ex(*ctx, NULL, NULL, key + (key_half ? 32 : 0), key);
+		       && EVP_CIPHER_CTX_ctrl(*ctx, EVP_CTRL_AEAD_SET_IVLEN, 12, NULL)
+		       && EVP_EncryptInit_ex(*ctx, NULL, NULL, key + (key_half ? 64 : 0), key);
 #endif
 
 	default:
@@ -120,12 +134,16 @@ static bool cipher_init(uint8_t suite, void **ctx, const uint8_t *key, bool key_
 
 static void cipher_exit(uint8_t suite, void *ctx) {
 	switch(suite) {
+#ifndef HAVE_OPENSSL
+
 	case SPTPS_CHACHA_POLY1305:
 		chacha_poly1305_exit(ctx);
 		break;
 
+#else
+
+	case SPTPS_CHACHA_POLY1305:
 	case SPTPS_AES256_GCM:
-#ifdef HAVE_OPENSSL
 		EVP_CIPHER_CTX_free(ctx);
 		break;
 #endif
@@ -136,42 +154,47 @@ static void cipher_exit(uint8_t suite, void *ctx) {
 }
 
 static bool cipher_encrypt(uint8_t suite, void *ctx, uint32_t seqno, const uint8_t *in, size_t inlen, uint8_t *out, size_t *outlen) {
+	uint8_t nonce[12] = {seqno, seqno >> 8, seqno >> 16, seqno >> 24};
+
 	switch(suite) {
+#ifndef HAVE_OPENSSL
+
 	case SPTPS_CHACHA_POLY1305:
 		chacha_poly1305_encrypt(ctx, seqno, in, inlen, out, outlen);
 		return true;
 
-	case SPTPS_AES256_GCM:
-#ifdef HAVE_OPENSSL
-		{
-			if(!EVP_EncryptInit_ex(ctx, NULL, NULL, NULL, (uint8_t *)&seqno)) {
-				return false;
-			}
+#else
 
-			int outlen1 = 0, outlen2 = 0;
-
-			if(!EVP_EncryptUpdate(ctx, out, &outlen1, in, (int)inlen)) {
-				return false;
-			}
-
-			if(!EVP_EncryptFinal_ex(ctx, out + outlen1, &outlen2)) {
-				return false;
-			}
-
-			outlen1 += outlen2;
-
-			if(!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, 16, out + outlen1)) {
-				return false;
-			}
-
-			outlen1 += 16;
-
-			if(outlen) {
-				*outlen = outlen1;
-			}
-
-			return true;
+	case SPTPS_CHACHA_POLY1305:
+	case SPTPS_AES256_GCM: {
+		if(!EVP_EncryptInit_ex(ctx, NULL, NULL, NULL, nonce)) {
+			return false;
 		}
+
+		int outlen1 = 0, outlen2 = 0;
+
+		if(!EVP_EncryptUpdate(ctx, out, &outlen1, in, (int)inlen)) {
+			return false;
+		}
+
+		if(!EVP_EncryptFinal_ex(ctx, out + outlen1, &outlen2)) {
+			return false;
+		}
+
+		outlen1 += outlen2;
+
+		if(!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, 16, out + outlen1)) {
+			return false;
+		}
+
+		outlen1 += 16;
+
+		if(outlen) {
+			*outlen = outlen1;
+		}
+
+		return true;
+	}
 
 #endif
 
@@ -181,43 +204,48 @@ static bool cipher_encrypt(uint8_t suite, void *ctx, uint32_t seqno, const uint8
 }
 
 static bool cipher_decrypt(uint8_t suite, void *ctx, uint32_t seqno, const uint8_t *in, size_t inlen, uint8_t *out, size_t *outlen) {
+	uint8_t nonce[12] = {seqno, seqno >> 8, seqno >> 16, seqno >> 24};
+
 	switch(suite) {
+#ifndef HAVE_OPENSSL
+
 	case SPTPS_CHACHA_POLY1305:
 		return chacha_poly1305_decrypt(ctx, seqno, in, inlen, out, outlen);
 
-	case SPTPS_AES256_GCM:
-#ifdef HAVE_OPENSSL
-		{
-			if(inlen < 16) {
-				return false;
-			}
+#else
 
-			inlen -= 16;
-
-			if(!EVP_DecryptInit_ex(ctx, NULL, NULL, NULL, (uint8_t *)&seqno)) {
-				return false;
-			}
-
-			int outlen1 = 0, outlen2 = 0;
-
-			if(!EVP_DecryptUpdate(ctx, out, &outlen1, in, (int)inlen)) {
-				return false;
-			}
-
-			if(!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, 16, (void *)(in + inlen))) {
-				return false;
-			}
-
-			if(!EVP_DecryptFinal_ex(ctx, out + outlen1, &outlen2)) {
-				return false;
-			}
-
-			if(outlen) {
-				*outlen = outlen1 + outlen2;
-			}
-
-			return true;
+	case SPTPS_CHACHA_POLY1305:
+	case SPTPS_AES256_GCM: {
+		if(inlen < 16) {
+			return false;
 		}
+
+		inlen -= 16;
+
+		if(!EVP_DecryptInit_ex(ctx, NULL, NULL, NULL, nonce)) {
+			return false;
+		}
+
+		int outlen1 = 0, outlen2 = 0;
+
+		if(!EVP_DecryptUpdate(ctx, out, &outlen1, in, (int)inlen)) {
+			return false;
+		}
+
+		if(!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, 16, (void *)(in + inlen))) {
+			return false;
+		}
+
+		if(!EVP_DecryptFinal_ex(ctx, out + outlen1, &outlen2)) {
+			return false;
+		}
+
+		if(outlen) {
+			*outlen = outlen1 + outlen2;
+		}
+
+		return true;
+	}
 
 #endif
 
