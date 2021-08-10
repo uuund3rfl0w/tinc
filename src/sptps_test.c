@@ -721,6 +721,8 @@ static int run_test(int argc, char *argv[]) {
 						free(mykey);
 						free(hiskey);
 						return 1;
+					} else {
+						break;
 					}
 				}
 
