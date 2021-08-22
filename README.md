@@ -55,12 +55,12 @@ versions, the security might only be as good as that of the oldest version.
 
 ## Compatibility
 
-Version 1.1pre18 is compatible with 1.0pre8, 1.0 and later, but not with older
+Version 1.1pre18 is compatible with 1.0 and later, but not with older
 versions of tinc.
 
-When the ExperimentalProtocol option is used, tinc is still compatible with
-1.0.X, 1.1pre11 and later, but not with any version between 1.1pre1 and
-1.1pre10.
+Note that this pre-release version of tinc 1.1 might be incompatible with older
+pre-release versions as the new cryptographic protocol might still undergo
+changes.
 
 ## Requirements
 

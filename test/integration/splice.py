@@ -28,7 +28,7 @@ def init(ctx: Test, *options: str) -> T.Tuple[Tinc, Tinc]:
         set Subnet 10.96.96.1
         {custom}
     """
-    foo.cmd(stdin=stdin)
+    foo.cmd("--force", stdin=stdin)
 
     stdin = f"""
         init {bar}
@@ -39,7 +39,7 @@ def init(ctx: Test, *options: str) -> T.Tuple[Tinc, Tinc]:
         set Subnet 10.96.96.2
         {custom}
     """
-    bar.cmd(stdin=stdin)
+    bar.cmd("--force", stdin=stdin)
 
     foo.add_script(Script.SUBNET_UP)
     bar.add_script(Script.SUBNET_UP)
