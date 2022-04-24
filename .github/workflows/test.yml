@@ -15,8 +15,6 @@ jobs:
       fail-fast: false
       matrix:
         arch:
-          - armhf
-          - mipsel
           - mingw
 
     container:
@@ -50,98 +48,7 @@ jobs:
           name: tests_cross_${{ matrix.arch }}
           path: /tmp/logs/tests.*.tar.gz
         if: always()
-
-  static-analysis:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v1
-
-      - name: Install tools
-        run: |
-          sudo apt-get install -y astyle clang-tidy-$CLANG
-          sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-$CLANG 100
-          curl -OL "https://github.com/koalaman/shellcheck/releases/download/v$SHELLCHECK/shellcheck-v${SHELLCHECK}.linux.x86_64.tar.xz"
-          tar -C ~ --strip-components=1 --wildcards -xf ./shellcheck-*.tar.xz 'shellcheck-*/shellcheck'
-          curl -o ~/shfmt -L "https://github.com/mvdan/sh/releases/download/v$SHFMT/shfmt_v${SHFMT}_linux_amd64"
-          chmod 755 ~/shfmt ~/shellcheck
-          python3 -m venv /tmp/venv
-          . /tmp/venv/bin/activate
-          pip3 install black pylint mypy
-        env:
-          CLANG: 11
-          SHELLCHECK: 0.7.2
-          SHFMT: 3.3.0
-
-      - name: Install deps
-        run: sudo SKIP_OPENSSL3=1 sh .ci/deps.sh
-
-      - name: Lint/typecheck/check formatting on C/shell/Python code
-        run: |
-          . /tmp/venv/bin/activate
-          PATH=$PATH:$HOME ./lint.py
-        if: always()
-
-      - name: Run clang-tidy
-        run: sh .ci/tidy/run.sh
-        if: always()
-
-      - name: Check warnings (gcc)
-        run: bash .ci/warn/run.sh
-        env:
-          CC: gcc-10
-        if: always()
-
-      - name: Check warnings (clang)
-        run: bash .ci/warn/run.sh
-        env:
-          CC: clang-12
-        if: always()
-
-  sanitizer:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        sanitizer:
-          - address
-          - thread
-          - undefined
-    env:
-      SANITIZER: "${{ matrix.sanitizer }}"
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v1
-
-      - name: Install deps
-        run: sudo sh .ci/deps.sh
-
-      - name: Run tests with OpenSSL 3
-        run: bash .ci/sanitizers/run.sh openssl3
-        if: always()
-
-      - name: Sanitize tests with default settings
-        run: bash .ci/sanitizers/run.sh default
-        if: always()
-
-      - name: Sanitize tests without legacy protocol
-        run: bash .ci/sanitizers/run.sh nolegacy
-        if: always()
-
-      - name: Run tests with libgcrypt
-        run: bash .ci/sanitizers/run.sh gcrypt
-        if: always()
-
-      - name: Upload test results
-        uses: actions/upload-artifact@v2
-        with:
-          name: tests_sanitizer_${{ matrix.sanitizer }}
-          path: /tmp/logs/tests.*.tar.gz
-        if: always()
-
+        
   linux:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -240,35 +147,6 @@ jobs:
             /tmp/artifacts/**/*.rpm
             /tmp/artifacts/**/*.exe
         if: startsWith(github.ref, 'refs/tags/')
-
-  macos:
-    runs-on: macos-latest
-    timeout-minutes: 20
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v1
-
-      - name: Install build deps
-        run: sh .ci/deps.sh
-
-      - name: Run tests with default settings
-        run: sh .ci/test/run.sh default
-
-      - name: Run tests without legacy protocol
-        run: sh .ci/test/run.sh nolegacy
-        if: always()
-
-      - name: Run tests with libgcrypt
-        run: sh .ci/test/run.sh gcrypt
-        if: always()
-
-      - name: Upload test results
-        uses: actions/upload-artifact@v2
-        with:
-          name: tests_macos
-          path: /tmp/logs/tests.*.tar.gz
-        if: always()
 
   mingw:
     runs-on: windows-latest
