@@ -56,7 +56,6 @@ jobs:
       fail-fast: false
       matrix:
         os:
-          - alpine
           - ubuntu:20.04
     container:
       image: ${{ matrix.os }}
@@ -211,46 +210,3 @@ jobs:
           name: tests_windows
           path: /tmp/logs/tests.*.tar.gz
         if: always()
-
-  msvc:
-    runs-on: windows-latest
-    timeout-minutes: 30
-
-    strategy:
-      fail-fast: false
-      matrix:
-        target:
-          - { build: amd64, host: amd64, test: test }
-          - { build: amd64, host: x86, test: test }
-          - { build: amd64, host: arm64, test: notest }
-
-    env:
-      HOST_ARCH: ${{ matrix.target.host }}
-      BUILD_ARCH: ${{ matrix.target.build }}
-
-    steps:
-      - name: Install meson
-        run: pip3 install meson
-
-      - name: Checkout code
-        uses: actions/checkout@v1
-
-      - name: Activate dev environment
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: ${{ matrix.target.build == matrix.target.host && matrix.target.host || format('{0}_{1}', matrix.target.build, matrix.target.host) }}
-
-      - name: Build (nolegacy)
-        run: .ci\windows\build.cmd nolegacy
-
-      - name: Test (nolegacy)
-        run: .ci\windows\test.cmd nolegacy
-        if: always() && matrix.target.test == 'test'
-
-      - name: Build (OpenSSL)
-        run: .ci\windows\build.cmd openssl
-        if: always()
-
-      - name: Test (OpenSSL)
-        run: .ci\windows\test.cmd openssl
-        if: always() && matrix.target.test == 'test'
