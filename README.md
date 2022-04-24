@@ -1,6 +1,5 @@
 # About tinc
 
-
 Tinc is a peer-to-peer VPN daemon that supports VPNs with an arbitrary number
 of nodes. Instead of configuring tunnels, you give tinc the location and
 public key of a few nodes in the VPN. After making the initial connections to
